@@ -60,26 +60,26 @@ let config = {
     SIM_RESOLUTION: 128,
     DYE_RESOLUTION: 1024,
     CAPTURE_RESOLUTION: 512,
-    DENSITY_DISSIPATION: 0.92,
-    VELOCITY_DISSIPATION: 0.6,
+    DENSITY_DISSIPATION: 0.04,
+    VELOCITY_DISSIPATION: 1.5,
     PRESSURE: 0.8,
     PRESSURE_ITERATIONS: 20,
-    CURL: 12,
-    SPLAT_RADIUS: 0.4,
-    SPLAT_FORCE: 3000,
+    CURL: 8,
+    SPLAT_RADIUS: 0.45,
+    SPLAT_FORCE: 2000,
     SHADING: true,
     COLORFUL: true,
-    COLOR_UPDATE_SPEED: 4,
+    COLOR_UPDATE_SPEED: 3,
     PAUSED: false,
-    BACK_COLOR: { r: 0, g: 0, b: 0 },
+    BACK_COLOR: { r: 235, g: 227, b: 211 },
     TRANSPARENT: false,
     BLOOM: true,
     BLOOM_ITERATIONS: 8,
     BLOOM_RESOLUTION: 256,
-    BLOOM_INTENSITY: 0.3,
-    BLOOM_THRESHOLD: 0.3,
+    BLOOM_INTENSITY: 0.25,
+    BLOOM_THRESHOLD: 0.4,
     BLOOM_SOFT_KNEE: 0.7,
-    SUNRAYS: true,
+    SUNRAYS: false,
     SUNRAYS_RESOLUTION: 196,
     SUNRAYS_WEIGHT: 1.0,
 }
@@ -113,7 +113,7 @@ if (!ext.supportLinearFiltering) {
     config.SUNRAYS = false;
 }
 
-// GUI removed — clean fullscreen mode
+startGUI();
 
 function getWebGLContext (canvas) {
     const params = { alpha: true, depth: false, stencil: false, antialias: false, preserveDrawingBuffer: false };
@@ -206,8 +206,79 @@ function supportRenderTextureFormat (gl, internalFormat, format, type) {
 }
 
 function startGUI () {
-    // Panel removed for clean fullscreen experience
-    // Press B for black bg, W for white bg
+    var gui = new dat.GUI({ width: 300 });
+    gui.add(config, 'DYE_RESOLUTION', { 'high': 1024, 'medium': 512, 'low': 256, 'very low': 128 }).name('quality').onFinishChange(initFramebuffers);
+    gui.add(config, 'SIM_RESOLUTION', { '32': 32, '64': 64, '128': 128, '256': 256 }).name('sim resolution').onFinishChange(initFramebuffers);
+    gui.add(config, 'DENSITY_DISSIPATION', 0, 4.0).name('density diffusion');
+    gui.add(config, 'VELOCITY_DISSIPATION', 0, 4.0).name('velocity diffusion');
+    gui.add(config, 'PRESSURE', 0.0, 1.0).name('pressure');
+    gui.add(config, 'CURL', 0, 50).name('vorticity').step(1);
+    gui.add(config, 'SPLAT_RADIUS', 0.01, 1.0).name('splat radius');
+    gui.add(config, 'SHADING').name('shading').onFinishChange(updateKeywords);
+    gui.add(config, 'COLORFUL').name('colorful');
+    gui.add(config, 'PAUSED').name('paused').listen();
+
+    gui.add({ fun: () => {
+        splatStack.push(parseInt(Math.random() * 20) + 5);
+    } }, 'fun').name('Random splats');
+
+    let bloomFolder = gui.addFolder('Bloom');
+    bloomFolder.add(config, 'BLOOM').name('enabled').onFinishChange(updateKeywords);
+    bloomFolder.add(config, 'BLOOM_INTENSITY', 0.1, 2.0).name('intensity');
+    bloomFolder.add(config, 'BLOOM_THRESHOLD', 0.0, 1.0).name('threshold');
+
+    let sunraysFolder = gui.addFolder('Sunrays');
+    sunraysFolder.add(config, 'SUNRAYS').name('enabled').onFinishChange(updateKeywords);
+    sunraysFolder.add(config, 'SUNRAYS_WEIGHT', 0.3, 1.0).name('weight');
+
+    let captureFolder = gui.addFolder('Capture');
+    captureFolder.addColor(config, 'BACK_COLOR').name('background color');
+    captureFolder.add(config, 'TRANSPARENT').name('transparent');
+    captureFolder.add({ fun: captureScreenshot }, 'fun').name('take screenshot');
+
+    let github = gui.add({ fun : () => {
+        window.open('https://github.com/PavelDoGreat/WebGL-Fluid-Simulation');
+        ga('send', 'event', 'link button', 'github');
+    } }, 'fun').name('Github');
+    github.__li.className = 'cr function bigFont';
+    github.__li.style.borderLeft = '3px solid #8C8C8C';
+    let githubIcon = document.createElement('span');
+    github.domElement.parentElement.appendChild(githubIcon);
+    githubIcon.className = 'icon github';
+
+    let twitter = gui.add({ fun : () => {
+        ga('send', 'event', 'link button', 'twitter');
+        window.open('https://twitter.com/PavelDoGreat');
+    } }, 'fun').name('Twitter');
+    twitter.__li.className = 'cr function bigFont';
+    twitter.__li.style.borderLeft = '3px solid #8C8C8C';
+    let twitterIcon = document.createElement('span');
+    twitter.domElement.parentElement.appendChild(twitterIcon);
+    twitterIcon.className = 'icon twitter';
+
+    let discord = gui.add({ fun : () => {
+        ga('send', 'event', 'link button', 'discord');
+        window.open('https://discordapp.com/invite/CeqZDDE');
+    } }, 'fun').name('Discord');
+    discord.__li.className = 'cr function bigFont';
+    discord.__li.style.borderLeft = '3px solid #8C8C8C';
+    let discordIcon = document.createElement('span');
+    discord.domElement.parentElement.appendChild(discordIcon);
+    discordIcon.className = 'icon discord';
+
+    let app = gui.add({ fun : () => {
+        ga('send', 'event', 'link button', 'app');
+        window.open('http://onelink.to/5b58bn');
+    } }, 'fun').name('Check out mobile app');
+    app.__li.className = 'cr function appBigFont';
+    app.__li.style.borderLeft = '3px solid #00FF7F';
+    let appIcon = document.createElement('span');
+    app.domElement.parentElement.appendChild(appIcon);
+    appIcon.className = 'icon app';
+
+    gui.close();
+    gui.domElement.style.display = 'none';
+    window.__fluidGUI = gui;
 }
 
 function isMobile () {
@@ -1493,10 +1564,10 @@ function correctDeltaY (delta) {
 }
 
 function generateColor () {
-    let c = HSVtoRGB(Math.random(), 0.5, 0.75);
-    c.r *= 0.15;
-    c.g *= 0.15;
-    c.b *= 0.15;
+    let c = HSVtoRGB(Math.random(), 0.45, 0.85);
+    c.r *= 0.25;
+    c.g *= 0.25;
+    c.b *= 0.25;
     return c;
 }
 
@@ -1575,7 +1646,73 @@ function hashCode (s) {
     return hash;
 };
 // ============================
-// BG TOGGLE — B = black, W = white
+// CONTROLS TOGGLE (gear icon)
+// Click the gear in the corner to show/hide the settings panel
+// ============================
+window.addEventListener('load', () => {
+    const gearBtn = document.createElement('div');
+    gearBtn.innerHTML = '⚙';
+    gearBtn.style.position = 'fixed';
+    gearBtn.style.top = '14px';
+    gearBtn.style.right = '14px';
+    gearBtn.style.width = '40px';
+    gearBtn.style.height = '40px';
+    gearBtn.style.display = 'flex';
+    gearBtn.style.alignItems = 'center';
+    gearBtn.style.justifyContent = 'center';
+    gearBtn.style.fontSize = '22px';
+    gearBtn.style.color = 'rgba(80,70,60,0.55)';
+    gearBtn.style.background = 'rgba(255,255,255,0.15)';
+    gearBtn.style.borderRadius = '50%';
+    gearBtn.style.cursor = 'pointer';
+    gearBtn.style.zIndex = '50';
+    gearBtn.style.userSelect = 'none';
+    gearBtn.style.backdropFilter = 'blur(4px)';
+    gearBtn.title = 'Settings';
+
+    gearBtn.addEventListener('click', () => {
+        const gui = window.__fluidGUI;
+        if (!gui) return;
+        const visible = gui.domElement.style.display !== 'none';
+        gui.domElement.style.display = visible ? 'none' : '';
+    });
+
+    document.body.appendChild(gearBtn);
+});
+
+// ============================
+// PAPER TEXTURE OVERLAY
+// Subtle grain on top of the fluid for a watercolour-on-paper feel
+// ============================
+window.addEventListener('load', () => {
+    const noiseSVG = `
+        <svg xmlns='http://www.w3.org/2000/svg' width='100%' height='100%'>
+            <filter id='n'>
+                <feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/>
+            </filter>
+            <rect width='100%' height='100%' filter='url(%23n)'/>
+        </svg>`;
+    const encoded = encodeURIComponent(noiseSVG);
+
+    const paper = document.createElement('div');
+    paper.style.position = 'fixed';
+    paper.style.top = '0';
+    paper.style.left = '0';
+    paper.style.width = '100%';
+    paper.style.height = '100%';
+    paper.style.pointerEvents = 'none';
+    paper.style.zIndex = '40';
+    paper.style.mixBlendMode = 'multiply';
+    paper.style.opacity = '0.10';
+    paper.style.backgroundImage = `url("data:image/svg+xml,${encoded}")`;
+    paper.style.backgroundSize = '300px 300px';
+
+    document.body.appendChild(paper);
+});
+
+// ============================
+// KEYBOARD SHORTCUTS
+// B = black bg, W = white bg, P = paper (default), S = save / export painting
 // ============================
 window.addEventListener('keydown', e => {
     if (e.key === 'b' || e.key === 'B') {
@@ -1583,6 +1720,12 @@ window.addEventListener('keydown', e => {
     }
     if (e.key === 'w' || e.key === 'W') {
         config.BACK_COLOR = { r: 255, g: 255, b: 255 };
+    }
+    if (e.key === 'p' || e.key === 'P') {
+        config.BACK_COLOR = { r: 235, g: 227, b: 211 };
+    }
+    if (e.key === 's' || e.key === 'S') {
+        captureScreenshot();
     }
 });
 
@@ -1612,7 +1755,7 @@ window.addEventListener('load', () => {
                     const now = performance.now();
                     if (volume > MIC_SENSITIVITY && now - lastFire > SPLAT_COOLDOWN) {
                         lastFire = now;
-                        splatStack.push(Math.floor(volume * 8) + 2);
+                        splatStack.push(Math.floor(volume * 6) + 1);
                     }
                 }
                 loop();
