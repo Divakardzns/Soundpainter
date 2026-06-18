@@ -1,27 +1,3 @@
-/*
-MIT License
-
-Copyright (c) 2017 Pavel Dobryakov
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-*/
-
 'use strict';
 
 // Simulation section
@@ -221,21 +197,19 @@ function startGUI () {
     pigmentFolder.add(config, 'COLOR_VALUE', 0, 1).name('brightness');
     pigmentFolder.add(config, 'COLOR_MULTIPLIER', 0.05, 0.6).name('intensity');
 
+    let paletteFolder = gui.addFolder('Palette');
+    let paletteUseCtrl = paletteFolder.add(config, 'USE_PALETTE').name('use custom colours');
+    paletteUseCtrl.onChange(() => {
+        if (window.__savePaletteToStorage) window.__savePaletteToStorage();
+    });
+    const paletteHostLi = document.createElement('li');
+    paletteHostLi.className = 'cr palette-host';
+    paletteFolder.__ul.appendChild(paletteHostLi);
+
     let illustrationFolder = gui.addFolder('Illustration');
     illustrationFolder.add(config, 'POSTERIZE').name('flat colour cells').onFinishChange(updateKeywords);
     illustrationFolder.add(config, 'POSTERIZE_LEVELS', 2, 12).step(1).name('colour bands');
     illustrationFolder.add(config, 'EDGE_STRENGTH', 0, 1).name('paper edges');
-
-    let effectsFolder = gui.addFolder('Effects');
-    window.__pitchAware = false;
-    effectsFolder.add(window, '__pitchAware').name('pitch colour mode');
-    effectsFolder.add({ fun: () => {
-        if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(() => {});
-        } else {
-            document.exitFullscreen().catch(() => {});
-        }
-    } }, 'fun').name('toggle fullscreen');
 
     let captureFolder = gui.addFolder('Capture');
     captureFolder.addColor(config, 'BACK_COLOR').name('background color');
@@ -273,9 +247,20 @@ function startGUI () {
 
     function applyPreset (p) {
         Object.assign(config, p);
+        // older saved presets (created before the palette feature existed)
+        // won't have these keys at all — Object.assign can't "clear" a key
+        // that's simply absent, so we explicitly default them every time.
+        config.USE_PALETTE = !!p.USE_PALETTE;
+        config.PALETTE = Array.isArray(p.PALETTE) && p.PALETTE.length >= 2
+            ? p.PALETTE.slice()
+            : ['#8ecae6', '#ffb4a2'];
+        if (window.__savePaletteToStorage) window.__savePaletteToStorage();
+        if (window.__renderPaletteUI) window.__renderPaletteUI();
         updateKeywords();
         initFramebuffers();
         refreshGUIDisplay(gui);
+        if (window.__renderPaletteUI) window.__renderPaletteUI();
+        if (window.__savePaletteToStorage) window.__savePaletteToStorage();
     }
 
     function addPresetButton (label, snapshot, presetName) {
@@ -320,6 +305,7 @@ function startGUI () {
             POSTERIZE_LEVELS: config.POSTERIZE_LEVELS,
             EDGE_STRENGTH: config.EDGE_STRENGTH,
             USE_PALETTE: config.USE_PALETTE,
+            PALETTE: config.PALETTE.slice(),
         };
     }
 
@@ -342,7 +328,7 @@ function startGUI () {
             DENSITY_DISSIPATION: 0.3, VELOCITY_DISSIPATION: 2,
             COLOR_SATURATION: 0.45, COLOR_VALUE: 0.9, COLOR_MULTIPLIER: 0.15,
             POSTERIZE: false, POSTERIZE_LEVELS: 5, EDGE_STRENGTH: 0.45,
-            USE_PALETTE: false,
+            USE_PALETTE: false, PALETTE: ['#8ecae6', '#ffb4a2'],
         }},
         { name: 'Paper Watercolour', config: {
             BACK_COLOR: { r: 255, g: 255, b: 255 },
@@ -352,7 +338,7 @@ function startGUI () {
             DENSITY_DISSIPATION: 0.2, VELOCITY_DISSIPATION: 2.5,
             COLOR_SATURATION: 0.55, COLOR_VALUE: 0.65, COLOR_MULTIPLIER: 0.35,
             POSTERIZE: true, POSTERIZE_LEVELS: 5, EDGE_STRENGTH: 0.45,
-            USE_PALETTE: false,
+            USE_PALETTE: false, PALETTE: ['#8ecae6', '#ffb4a2'],
         }},
     ];
 
@@ -364,7 +350,7 @@ function startGUI () {
     savedPresets.forEach(p => addPresetButton(p.name, p.config, p.name));
 
     // ── accordion behaviour: opening one top-level folder closes the others ──
-    const topFolders = [paintFolder, pigmentFolder, illustrationFolder, effectsFolder, captureFolder, advancedFolder, presetsFolder];
+    const topFolders = [paintFolder, pigmentFolder, paletteFolder, illustrationFolder, captureFolder, advancedFolder, presetsFolder];
     topFolders.forEach(folder => {
         const titleEl = folder.domElement.querySelector('.title');
         if (!titleEl) return;
@@ -1982,10 +1968,66 @@ window.addEventListener('load', () => {
         if (!gui) return;
         const visible = gui.domElement.style.display !== 'none';
         gui.domElement.style.display = visible ? 'none' : '';
-        if (!visible && window.__closePaletteMenu) window.__closePaletteMenu();
     });
 
     document.body.appendChild(gearBtn);
+
+    // ── fullscreen + clear, in a row next to the gear ──────────────────
+    function makeIconBtn (symbol, title, rightOffset) {
+        const btn = document.createElement('div');
+        btn.innerHTML = symbol;
+        btn.style.position = 'fixed';
+        btn.style.top = '14px';
+        btn.style.right = rightOffset;
+        btn.style.width = '38px';
+        btn.style.height = '38px';
+        btn.style.display = 'flex';
+        btn.style.alignItems = 'center';
+        btn.style.justifyContent = 'center';
+        btn.style.fontSize = '16px';
+        btn.style.fontFamily = "'Space Mono', monospace";
+        btn.style.color = 'rgba(235, 235, 240, 0.7)';
+        btn.style.background = 'rgba(16, 18, 22, 0.55)';
+        btn.style.backdropFilter = 'blur(16px) saturate(160%)';
+        btn.style.border = '1px solid rgba(255, 255, 255, 0.1)';
+        btn.style.borderRadius = '50%';
+        btn.style.cursor = 'pointer';
+        btn.style.zIndex = '50';
+        btn.style.userSelect = 'none';
+        btn.style.boxShadow = '0 4px 16px rgba(0,0,0,0.2)';
+        btn.style.transition = 'border-color 0.2s ease, color 0.2s ease';
+        btn.title = title;
+        btn.addEventListener('mouseenter', () => {
+            btn.style.borderColor = 'rgba(125, 224, 214, 0.45)';
+            btn.style.color = 'rgba(125, 224, 214, 0.9)';
+        });
+        btn.addEventListener('mouseleave', () => {
+            btn.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+            btn.style.color = 'rgba(235, 235, 240, 0.7)';
+        });
+        document.body.appendChild(btn);
+        return btn;
+    }
+
+    const fsBtn = makeIconBtn('⛶', 'Fullscreen', '60px');
+    fsBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+            document.exitFullscreen().catch(() => {});
+        }
+    });
+    document.addEventListener('fullscreenchange', () => {
+        fsBtn.innerHTML = document.fullscreenElement ? '✕' : '⛶';
+        fsBtn.title = document.fullscreenElement ? 'Exit fullscreen' : 'Fullscreen';
+    });
+
+    const eraserBtn = makeIconBtn('🧹', 'Clear canvas', '106px');
+    eraserBtn.addEventListener('click', () => {
+        clearCanvas();
+        eraserBtn.innerHTML = '✓';
+        setTimeout(() => { eraserBtn.innerHTML = '🧹'; }, 600);
+    });
 });
 
 // ============================
@@ -2142,88 +2184,48 @@ window.addEventListener('load', () => {
         overlay.style.opacity = '0';
         setTimeout(() => overlay.remove(), 600);
 
-        const MIC_SENSITIVITY = 0.18;
-        const SPLAT_COOLDOWN  = 180;
+        const MIC_SENSITIVITY = 0.02;
+        const SPLAT_COOLDOWN  = 90;
         let lastFire = 0;
+        let noiseFloor = 0.005;
 
         navigator.mediaDevices.getUserMedia({ audio: true, video: false })
             .then(stream => {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
                 if (ctx.state === 'suspended') ctx.resume();
 
-                // large fftSize for pitch detection
                 const analyser = ctx.createAnalyser();
-                analyser.fftSize = 2048;
+                analyser.fftSize = 1024;
+                analyser.smoothingTimeConstant = 0.3;
                 ctx.createMediaStreamSource(stream).connect(analyser);
                 const freqData = new Uint8Array(analyser.frequencyBinCount);
-                const timeData = new Float32Array(analyser.fftSize);
-
-                // autocorrelation pitch detection
-                function detectPitch () {
-                    analyser.getFloatTimeDomainData(timeData);
-                    const SIZE = timeData.length;
-                    let r = new Array(SIZE).fill(0);
-                    for (let lag = 0; lag < SIZE; lag++) {
-                        for (let i = 0; i < SIZE - lag; i++) {
-                            r[lag] += timeData[i] * timeData[i + lag];
-                        }
-                    }
-                    let firstNeg = 0;
-                    while (firstNeg < SIZE - 1 && r[firstNeg] > 0) firstNeg++;
-                    let peak = firstNeg, maxVal = -Infinity;
-                    for (let i = firstNeg; i < SIZE; i++) {
-                        if (r[i] > maxVal) { maxVal = r[i]; peak = i; }
-                    }
-                    const freq = ctx.sampleRate / peak;
-                    return (freq > 60 && freq < 1200) ? freq : null;
-                }
-
-                // pitch → color  (low=warm/red, mid=violet, high=cyan/blue)
-                function pitchToColor (freq) {
-                    if (!freq) return null;
-                    const lo = 80, hi = 1000;
-                    const t = Math.max(0, Math.min(1, (Math.log(freq) - Math.log(lo)) / (Math.log(hi) - Math.log(lo))));
-                    // hue: 0=red (low), 270=violet (mid), 180=cyan (high)
-                    const hue = (1 - t) * 10 + t * 200;
-                    const c = HSVtoRGB(hue / 360, 0.65, 0.85);
-                    c.r *= 0.35;
-                    c.g *= 0.35;
-                    c.b *= 0.35;
-                    return c;
-                }
 
                 function loop() {
                     requestAnimationFrame(loop);
                     analyser.getByteFrequencyData(freqData);
-                    let sum = 0;
-                    for (let i = 0; i < freqData.length; i++) sum += freqData[i];
-                    const volume = sum / freqData.length / 255;
+
+                    // use peak energy rather than full-spectrum average —
+                    // a single loud note shouldn't get diluted by mostly-silent bins
+                    let peak = 0;
+                    for (let i = 0; i < freqData.length; i++) {
+                        if (freqData[i] > peak) peak = freqData[i];
+                    }
+                    const level = peak / 255;
+
+                    // gently track ambient room noise, but don't let it climb
+                    // fast enough to swallow normal playing volume
+                    noiseFloor = noiseFloor * 0.999 + level * 0.001;
+                    const threshold = Math.max(MIC_SENSITIVITY, noiseFloor * 1.15);
+
                     const now = performance.now();
-                    if (volume > MIC_SENSITIVITY && now - lastFire > SPLAT_COOLDOWN) {
+                    if (level > threshold && now - lastFire > SPLAT_COOLDOWN) {
                         lastFire = now;
                         lastSoundTime = now;
-
-                        if (window.__pitchAware) {
-                            const freq = detectPitch();
-                            const col = pitchToColor(freq);
-                            if (col) {
-                                // direct splat with pitch color at random canvas position
-                                const x = 0.15 + Math.random() * 0.7;
-                                const y = 0.15 + Math.random() * 0.7;
-                                const angle = Math.random() * Math.PI * 2;
-                                const force = config.SPLAT_FORCE * (volume * 4 + 0.5);
-                                splat(x * canvas.width, y * canvas.height,
-                                      Math.cos(angle) * force, Math.sin(angle) * force, col);
-                            } else {
-                                splatStack.push(1);
-                            }
-                        } else {
-                            splatStack.push(1);
-                        }
+                        splatStack.push(1 + Math.round(level * 4));
                     }
                 }
                 loop();
-                console.log('🎸 mic + pitch detection active');
+                console.log('🎸 mic active — play something!');
             })
             .catch(e => console.warn('mic blocked:', e));
 
@@ -2242,6 +2244,10 @@ window.addEventListener('load', () => {
 // ============================
 // CUSTOM PALETTE WIDGET (2–8 colours, add/remove)
 // ============================
+// ============================
+// CUSTOM PALETTE — renders inside the GUI's Palette folder
+// (2–8 colours, add/remove), no separate floating widget
+// ============================
 window.addEventListener('load', () => {
     // restore saved palette
     try {
@@ -2255,68 +2261,26 @@ window.addEventListener('load', () => {
     function savePalette () {
         localStorage.setItem('fluidPalette', JSON.stringify({ use: config.USE_PALETTE, colors: config.PALETTE }));
     }
+    window.__savePaletteToStorage = savePalette;
 
-    // toggle button
-    const paletteBtn = document.createElement('div');
-    paletteBtn.innerHTML = '🎨';
-    paletteBtn.style.position = 'fixed';
-    paletteBtn.style.top = '14px';
-    paletteBtn.style.right = '60px';
-    paletteBtn.style.width = '38px';
-    paletteBtn.style.height = '38px';
-    paletteBtn.style.display = 'flex';
-    paletteBtn.style.alignItems = 'center';
-    paletteBtn.style.justifyContent = 'center';
-    paletteBtn.style.fontSize = '16px';
-    paletteBtn.style.background = 'rgba(16, 18, 22, 0.55)';
-    paletteBtn.style.backdropFilter = 'blur(16px) saturate(160%)';
-    paletteBtn.style.border = '1px solid rgba(255, 255, 255, 0.1)';
-    paletteBtn.style.borderRadius = '50%';
-    paletteBtn.style.cursor = 'pointer';
-    paletteBtn.style.zIndex = '50';
-    paletteBtn.style.userSelect = 'none';
-    paletteBtn.style.boxShadow = '0 4px 16px rgba(0,0,0,0.2)';
-    paletteBtn.style.transition = 'border-color 0.2s ease';
-    paletteBtn.title = 'Colour palette';
+    function waitForHost (cb) {
+        const host = document.querySelector('.palette-host');
+        if (host) { cb(host); return; }
+        setTimeout(() => waitForHost(cb), 50);
+    }
 
-    paletteBtn.addEventListener('mouseenter', () => {
-        paletteBtn.style.borderColor = 'rgba(125, 224, 214, 0.5)';
-    });
-    paletteBtn.addEventListener('mouseleave', () => {
-        paletteBtn.style.borderColor = 'rgba(255, 255, 255, 0.1)';
-    });
-
-    // panel
-    const panel = document.createElement('div');
-    panel.style.position = 'fixed';
-    panel.style.top = '58px';
-    panel.style.right = '14px';
-    panel.style.width = '200px';
-    panel.style.display = 'none';
-    panel.style.flexDirection = 'column';
-    panel.style.gap = '6px';
-    panel.style.padding = '12px';
-    panel.style.background = 'rgba(16, 18, 22, 0.55)';
-    panel.style.backdropFilter = 'blur(16px) saturate(160%)';
-    panel.style.border = '1px solid rgba(255, 255, 255, 0.08)';
-    panel.style.borderRadius = '10px';
-    panel.style.boxShadow = '0 8px 32px rgba(0,0,0,0.25)';
-    panel.style.zIndex = '50';
-    panel.style.fontFamily = "'Space Mono', monospace";
-    panel.style.color = 'rgba(235, 235, 240, 0.85)';
-    panel.style.fontSize = '11px';
-
-    function makeRow (color, index) {
+    function makeRow (host, color, index) {
         const row = document.createElement('div');
         row.style.display = 'flex';
         row.style.alignItems = 'center';
         row.style.gap = '8px';
+        row.style.padding = '4px 6px';
 
         const swatch = document.createElement('input');
         swatch.type = 'color';
         swatch.value = color;
-        swatch.style.width = '32px';
-        swatch.style.height = '24px';
+        swatch.style.width = '28px';
+        swatch.style.height = '20px';
         swatch.style.border = '1px solid rgba(255,255,255,0.15)';
         swatch.style.borderRadius = '4px';
         swatch.style.background = 'transparent';
@@ -2330,6 +2294,7 @@ window.addEventListener('load', () => {
         label.textContent = 'colour ' + (index + 1);
         label.style.flex = '1';
         label.style.opacity = '0.7';
+        label.style.fontSize = '10px';
 
         row.appendChild(swatch);
         row.appendChild(label);
@@ -2345,7 +2310,7 @@ window.addEventListener('load', () => {
             removeBtn.addEventListener('click', () => {
                 config.PALETTE.splice(index, 1);
                 savePalette();
-                renderPalette();
+                renderPalette(host);
             });
             row.appendChild(removeBtn);
         }
@@ -2353,39 +2318,17 @@ window.addEventListener('load', () => {
         return row;
     }
 
-    function renderPalette () {
-        panel.innerHTML = '';
+    function renderPalette (host) {
+        host.innerHTML = '';
+        host.style.padding = '6px 0';
 
-        const toggleRow = document.createElement('label');
-        toggleRow.style.display = 'flex';
-        toggleRow.style.alignItems = 'center';
-        toggleRow.style.gap = '8px';
-        toggleRow.style.marginBottom = '4px';
-        toggleRow.style.cursor = 'pointer';
-        toggleRow.style.fontWeight = '700';
-        toggleRow.style.letterSpacing = '0.05em';
-        toggleRow.style.textTransform = 'uppercase';
-        toggleRow.style.fontSize = '10px';
-
-        const toggle = document.createElement('input');
-        toggle.type = 'checkbox';
-        toggle.checked = config.USE_PALETTE;
-        toggle.addEventListener('change', () => {
-            config.USE_PALETTE = toggle.checked;
-            savePalette();
-        });
-
-        toggleRow.appendChild(toggle);
-        toggleRow.appendChild(document.createTextNode('use custom colours'));
-        panel.appendChild(toggleRow);
-
-        config.PALETTE.forEach((c, i) => panel.appendChild(makeRow(c, i)));
+        config.PALETTE.forEach((c, i) => host.appendChild(makeRow(host, c, i)));
 
         if (config.PALETTE.length < 8) {
             const addBtn = document.createElement('div');
             addBtn.textContent = '+ add colour';
-            addBtn.style.marginTop = '4px';
-            addBtn.style.padding = '6px';
+            addBtn.style.margin = '4px 6px';
+            addBtn.style.padding = '5px';
             addBtn.style.textAlign = 'center';
             addBtn.style.border = '1px solid rgba(255,255,255,0.1)';
             addBtn.style.borderRadius = '6px';
@@ -2400,28 +2343,14 @@ window.addEventListener('load', () => {
                 const randomHex = '#' + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, '0');
                 config.PALETTE.push(randomHex);
                 savePalette();
-                renderPalette();
+                renderPalette(host);
             });
-            panel.appendChild(addBtn);
+            host.appendChild(addBtn);
         }
     }
 
-    renderPalette();
-
-    function closePaletteMenu () {
-        panel.style.display = 'none';
-    }
-    window.__closePaletteMenu = closePaletteMenu;
-
-    paletteBtn.addEventListener('click', () => {
-        const opening = panel.style.display === 'none';
-        panel.style.display = opening ? 'flex' : 'none';
-        if (opening) {
-            const gui = window.__fluidGUI;
-            if (gui) gui.domElement.style.display = 'none';
-        }
+    waitForHost((host) => {
+        renderPalette(host);
+        window.__renderPaletteUI = () => renderPalette(host);
     });
-
-    document.body.appendChild(paletteBtn);
-    document.body.appendChild(panel);
 });
