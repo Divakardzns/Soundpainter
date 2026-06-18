@@ -370,24 +370,26 @@ function startGUI () {
     });
 
     gui.domElement.style.display = 'none';
+    gui.domElement.style.position = 'fixed';
+    gui.domElement.style.top = '62px';
+    gui.domElement.style.right = '14px';
+    gui.domElement.style.maxHeight = 'calc(100vh - 80px)';
+    gui.domElement.style.overflowY = 'auto';
     window.__fluidGUI = gui;
 
-    // ── permanent credit footer, pinned outside the GUI's own DOM so it
-    //    can never be scrolled past, collapsed, or removed by any folder logic ──
+    // ── permanent credit footer — sits as the last element inside the
+    //    panel's own scrollable content, so it's never hidden behind
+    //    folders and scrolls naturally with everything else ──
     const creditBar = document.createElement('div');
     creditBar.textContent = 'created by divakar';
-    creditBar.style.position = 'absolute';
-    creditBar.style.bottom = '0';
-    creditBar.style.left = '0';
-    creditBar.style.width = '100%';
     creditBar.style.textAlign = 'center';
-    creditBar.style.padding = '8px 0';
+    creditBar.style.padding = '10px 0 4px';
     creditBar.style.fontSize = '10px';
     creditBar.style.letterSpacing = '0.05em';
     creditBar.style.fontStyle = 'italic';
     creditBar.style.color = 'rgba(235, 235, 240, 0.45)';
-    creditBar.style.background = 'rgba(255, 255, 255, 0.03)';
     creditBar.style.borderTop = '1px solid rgba(255, 255, 255, 0.08)';
+    creditBar.style.marginTop = '4px';
     creditBar.style.cursor = 'pointer';
     creditBar.style.userSelect = 'none';
     creditBar.style.fontFamily = "'Space Mono', monospace";
@@ -402,8 +404,6 @@ function startGUI () {
         window.open('https://www.instagram.com/divakoreee/', '_blank');
     });
 
-    gui.domElement.style.position = 'relative';
-    gui.domElement.style.paddingBottom = '28px';
     gui.domElement.appendChild(creditBar);
 }
 
@@ -1836,17 +1836,18 @@ window.addEventListener('load', () => {
     style.innerHTML = `
         .dg, .dg * {
             text-shadow: none !important;
+            box-sizing: border-box;
         }
         .dg.main {
             font-family: 'Space Mono', monospace !important;
-            background: rgba(16, 18, 22, 0.55) !important;
-            backdrop-filter: blur(16px) saturate(160%);
-            -webkit-backdrop-filter: blur(16px) saturate(160%);
-            border: 1px solid rgba(255, 255, 255, 0.08) !important;
-            border-radius: 10px !important;
+            background: rgba(12, 14, 18, 0.88) !important;
+            backdrop-filter: blur(20px) saturate(160%) !important;
+            -webkit-backdrop-filter: blur(20px) saturate(160%) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            border-radius: 12px !important;
             overflow: hidden;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-            padding: 4px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+            padding: 6px;
         }
         .dg.main .close-button { display: none !important; }
         .dg .property-name {
@@ -2246,9 +2247,6 @@ window.addEventListener('load', () => {
 });
 
 // ============================
-// CUSTOM PALETTE WIDGET (2–8 colours, add/remove)
-// ============================
-// ============================
 // CUSTOM PALETTE — renders inside the GUI's Palette folder
 // (2–8 colours, add/remove), no separate floating widget
 // ============================
@@ -2323,6 +2321,13 @@ window.addEventListener('load', () => {
     }
 
     function renderPalette (host) {
+        // self-heal: never allow fewer than 2 colours, regardless of what
+        // ended up in config.PALETTE or localStorage from earlier sessions
+        if (!Array.isArray(config.PALETTE) || config.PALETTE.length < 2) {
+            config.PALETTE = ['#8ecae6', '#ffb4a2'];
+            savePalette();
+        }
+
         host.innerHTML = '';
         host.style.padding = '6px 0';
 
@@ -2369,23 +2374,27 @@ window.addEventListener('load', () => {
     wrap.style.bottom = '0';
     wrap.style.left = '0';
     wrap.style.width = '100%';
-    wrap.style.height = '60px';
+    wrap.style.height = '50px';
     wrap.style.zIndex = '45';
     wrap.style.pointerEvents = 'none';
-    wrap.style.opacity = '0.55';
+    wrap.style.background = 'rgba(16, 18, 22, 0.45)';
+    wrap.style.backdropFilter = 'blur(8px)';
+    wrap.style.borderTop = '1px solid rgba(255, 255, 255, 0.08)';
 
     const svgNS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(svgNS, 'svg');
     svg.setAttribute('width', '100%');
-    svg.setAttribute('height', '60');
-    svg.setAttribute('viewBox', '0 0 1000 60');
+    svg.setAttribute('height', '50');
+    svg.setAttribute('viewBox', '0 0 1000 50');
     svg.setAttribute('preserveAspectRatio', 'none');
     svg.style.display = 'block';
 
     const path = document.createElementNS(svgNS, 'path');
     path.setAttribute('fill', 'none');
-    path.setAttribute('stroke', 'rgba(125, 224, 214, 0.55)');
-    path.setAttribute('stroke-width', '1.5');
+    path.setAttribute('stroke', 'rgba(125, 224, 214, 0.95)');
+    path.setAttribute('stroke-width', '2');
+    path.setAttribute('stroke-linecap', 'round');
+    path.setAttribute('stroke-linejoin', 'round');
     svg.appendChild(path);
     wrap.appendChild(svg);
     document.body.appendChild(wrap);
@@ -2394,9 +2403,9 @@ window.addEventListener('load', () => {
     const timeData = new Uint8Array(2048);
 
     function flatPath () {
-        let d = `M 0 30`;
+        let d = `M 0 25`;
         for (let i = 1; i < POINTS; i++) {
-            d += ` L ${(i / (POINTS - 1)) * 1000} 30`;
+            d += ` L ${(i / (POINTS - 1)) * 1000} 25`;
         }
         return d;
     }
@@ -2417,7 +2426,7 @@ window.addEventListener('load', () => {
         let d = '';
         for (let i = 0; i < POINTS; i++) {
             const sample = timeData[i * step] / 255; // 0..1, 0.5 = silence
-            const y = 30 + (sample - 0.5) * 50;
+            const y = 25 + (sample - 0.5) * 42;
             const x = (i / (POINTS - 1)) * 1000;
             d += (i === 0 ? `M ${x} ${y}` : ` L ${x} ${y}`);
         }
